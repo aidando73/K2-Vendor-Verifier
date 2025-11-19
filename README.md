@@ -331,7 +331,7 @@ We test toolcall's response over a set of 4,000 requests. Each provider's respon
 
 K2 vendors are periodically evaluated. If you are not on the list and would like to be included, feel free to contact us.
 
-**Sample Data**: Detailed samples and MoonshotAI results are available in `evaluation-dataset/tool-calls/` (50% of the test set).
+**Sample Data**: Detailed samples and MoonshotAI results are available in [tool-calls-dataset](https://statics.moonshot.cn/k2vv/tool-calls.tar.gz) (50% of the test set).
 
 ## Suggestions to Vendors
 
