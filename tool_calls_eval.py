@@ -16,6 +16,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import urlparse
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -178,9 +179,15 @@ class ToolCallsValidator:
         # Fireworks is OpenAI-compatible; support FIREWORKS_API_KEY as a first-class env var
         # so users don't need to overload OPENAI_API_KEY.
         self.api_key = api_key or os.environ.get("FIREWORKS_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not self.api_key and self._is_localhost_base_url(self.base_url):
+            # Many local OpenAI-compatible servers don't require auth. The OpenAI client
+            # still expects a non-empty API key value, so we provide a harmless placeholder.
+            self.api_key = "LOCAL"
+            logger.info("No API key provided; using placeholder key for localhost base_url.")
         if not self.api_key:
             raise ValueError(
-                "API key is required. Provide --api-key or set FIREWORKS_API_KEY (preferred) or OPENAI_API_KEY."
+                "API key is required. Provide --api-key or set FIREWORKS_API_KEY (preferred) or OPENAI_API_KEY. "
+                "For localhost base_url, api key may be omitted."
             )
         self.concurrency = concurrency
         self.semaphore = asyncio.Semaphore(concurrency)
@@ -225,6 +232,17 @@ class ToolCallsValidator:
         logger.info(f"Request endpoint: {endpoint}")
         if self.incremental:
             logger.info("Incremental mode: enabled")
+
+    @staticmethod
+    def _is_localhost_base_url(base_url: str) -> bool:
+        """
+        Return True if base_url points at localhost/loopback.
+        """
+        try:
+            host = (urlparse(base_url).hostname or "").lower()
+        except Exception:
+            return False
+        return host in {"localhost", "127.0.0.1", "::1"}
 
     async def __aenter__(self):
         """
@@ -846,7 +864,7 @@ async def main() -> None:
 
     parser.add_argument(
         "--provider",
-        choices=["fireworks", "moonshot", "openrouter", "openai"],
+        choices=["fireworks", "moonshot", "openrouter", "openai", "localhost"],
         default=None,
         help=(
             "Convenience preset for common OpenAI-compatible providers. "
@@ -861,9 +879,28 @@ async def main() -> None:
             "API base URL (OpenAI-compatible). Examples:\n"
             "- Moonshot:   https://api.moonshot.cn/v1\n"
             "- Fireworks:  https://api.fireworks.ai/inference/v1\n"
+            "- Localhost:  http://localhost:8000/v1\n"
             "- OpenRouter: https://openrouter.ai/api/v1\n"
             "- OpenAI:     https://api.openai.com/v1"
         ),
+    )
+
+    parser.add_argument(
+        "--localhost-host",
+        default="localhost",
+        help="Localhost preset host (default: localhost). Only used with --provider localhost and no --base-url.",
+    )
+    parser.add_argument(
+        "--localhost-port",
+        type=int,
+        default=8000,
+        help="Localhost preset port (default: 8000). Only used with --provider localhost and no --base-url.",
+    )
+    parser.add_argument(
+        "--localhost-scheme",
+        default="http",
+        choices=["http", "https"],
+        help="Localhost preset scheme (default: http). Only used with --provider localhost and no --base-url.",
     )
 
     parser.add_argument(
@@ -959,6 +996,8 @@ async def main() -> None:
             base_url = "https://openrouter.ai/api/v1"
         elif args.provider == "openai":
             base_url = "https://api.openai.com/v1"
+        elif args.provider == "localhost":
+            base_url = f"{args.localhost_scheme}://{args.localhost_host}:{args.localhost_port}/v1"
         else:
             logger.error("Missing --base-url (or set --provider).")
             return
